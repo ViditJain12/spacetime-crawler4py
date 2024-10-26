@@ -1,5 +1,23 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin, urldefrag
+from bs4 import BeautifulSoup
+from collections import defaultdict, Counter
+
+# Global Variables
+visited_urls = set()
+subdomain_count = defaultdict(int)
+word_counter = Counter()
+longest_page_url = None
+longest_page_word_count = 0
+
+STOP_WORDS = {"ourselves", "hers", "between", "yourself", "but", "again", "there", "about", "once", "during", "out", "very", "having", 
+        "with", "they", "own", "an", "be", "some", "for", "do", "its", "yours", "such", "into", "of", "most", "itself", "other", "off", "is", 
+        "s", "am", "or", "who", "as", "from", "him", "each", "the", "themselves", "until", "below", "are", "we", "these", "your", "his", "through", 
+        "don", "nor", "me", "were", "her", "more", "himself", "this", "down", "should", "our", "their", "while", "above", "both", "up", "to", 
+        "ours", "had", "she", "all", "no", "when", "at", "any", "before", "them", "same", "and", "been", "have", "in", "will", "on", "does", 
+        "yourselves",  "then", "that", "because", "what", "over", "why", "so", "can", "did", "not", "now", "under", "he", "you", "herself", "has", 
+        "just", "where", "too", "only", "myself", "which", "those", "i", "after", "few", "whom", "t", "being", "if", "theirs", "my", "against", 
+        "a", "by", "doing", "it", "how", "further", "was", "here", "than", "d", "b"}
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -15,7 +33,62 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    return list()
+    
+    if resp.status != 200:
+        return []
+    
+    soup = BeautifulSoup(resp.raw_response.content, "html.parser")
+    links = []
+    
+    text = soup.get_text()
+    word_count = count_words(text)
+    process_longest_page(url, word_count)
+    process_common_words(text)
+    
+    for link in soup.find_all("a", href=True):
+        full_url = urljoin(url, link['href'])
+        defragged_url = urldefrag(full_url)[0]
+        links.append(defragged_url)
+        process_subdomain(defragged_url)
+
+    return links
+
+def count_words(text):
+    """
+    Counts the words in the given text content.
+    """
+    words = re.findall(r'\b\w+\b', text.lower())  # Tokenize and lowercase
+    return len(words)
+
+def process_longest_page(url, word_count):
+    """
+    Updates information about the longest page found.
+    """
+    global longest_page_url, longest_page_word_count
+    if word_count > longest_page_word_count:
+        longest_page_word_count = word_count
+        longest_page_url = url
+
+def process_common_words(text):
+    """
+    Processes the text of a page to count occurrences of each word,
+    ignoring stop words.
+    """
+    words = re.findall(r'\b\w+\b', text.lower())
+    filtered_words = [word for word in words if word not in STOP_WORDS]
+    word_counter.update(filtered_words)
+
+def process_subdomain(url):
+    """
+    Updates the count of unique pages for each subdomain in uci.edu.
+    """
+    global visited_urls, subdomain_count
+    parsed_url = urlparse(url)
+    if parsed_url.netloc.endswith("uci.edu"):
+        subdomain = parsed_url.netloc
+        if url not in visited_urls:
+            visited_urls.add(url)
+            subdomain_count[subdomain] += 1
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -23,8 +96,15 @@ def is_valid(url):
     # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
+
         if parsed.scheme not in set(["http", "https"]):
             return False
+
+        allowed_domains = {"ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu", "today.uci.edu"}
+
+        if not any(domain in parsed.netloc for domain in allowed_domains):
+            return False
+
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -39,4 +119,17 @@ def is_valid(url):
         print ("TypeError for ", parsed)
         raise
 
-# hi
+def report():
+    """
+    Generates a report for the crawler including:
+    - Total unique pages found
+    - Longest page details
+    - 50 most common words
+    - Subdomain counts
+    """
+    print("Total Unique Pages Found:", len(visited_urls))
+    print("Longest Page:", longest_page_url, "with", longest_page_word_count, "words")
+    print("50 Most Common Words:", word_counter.most_common(50))
+    print("Subdomains and Counts:")
+    for subdomain in sorted(subdomain_count.keys()):
+        print(subdomain + ",", subdomain_count[subdomain])
