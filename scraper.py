@@ -62,7 +62,7 @@ def count_words(text):
     """
     Counts the words in the given text content.
     """
-    words = re.findall(r'\b\w+\b', text.lower())  # Tokenize and lowercase
+    words = re.findall(r'[0-9a-z]+', text.lower())  # Tokenize and lowercase
     return len(words)
 
 def process_longest_page(url, word_count):
@@ -80,8 +80,8 @@ def process_common_words(text):
     ignoring stop words.
     """
 
-    words = re.findall(r'\b\w+\b', text.lower())
-    filtered_words = [word for word in words if word not in STOP_WORDS and not (word.isdigit() and len(word) == 1)]
+    words = re.findall(r'[0-9a-z]+', text.lower())
+    filtered_words = [word for word in words if word not in STOP_WORDS and not (word.isdigit() and len(word) == 1) and len(word) >= 3]
     word_counter.update(filtered_words)
 
 def process_subdomain(url):
